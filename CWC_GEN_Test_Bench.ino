@@ -34,28 +34,28 @@
   #define TORQUE_UNIT "N-mm"
 
   // Voltage Divider
-  const int VOLTAGE_DIVIDER_ANALOG_PIN = A0;
+  #define VOLTAGE_DIVIDER_ANALOG_PIN A0
 
   // Current Sensor
-  const int CURRENT_SENSOR_ANALOG_PIN = A1;
+  #define CURRENT_SENSOR_ANALOG_PIN A1
 
   // Infrared Sensor
-  const int INFRARED_SENSOR_OUT_PIN = 2;
+  #define INFRARED_SENSOR_OUT_PIN 2
 
   // Load Cell Amp
-  const int LOAD_CELL_AMP_DAT_PIN = 6;
-  const int LOAD_CELL_AMP_CLK_PIN = 7;
+  #define LOAD_CELL_AMP_DAT_PIN 6
+  #define LOAD_CELL_AMP_CLK_PIN 7
 
   // SD Card Reader
-  const int SD_CARD_READER_CS_PIN = 10;
+  #define SD_CARD_READER_CS_PIN 10
 
   // Load Cell Amp
-  const float CALIBRATION_FACTOR = 372.5;
+  #define CALIBRATION_FACTOR 372.5
 
   // LCD Screen
-  const int I2C_ADDRESS = 0x27;
-  const int COLUMNS = 20;
-  const int ROWS = 4;
+  #define I2C_ADDRESS 0x27
+  #define COLUMNS 20
+  #define ROWS 4
 
 
 float getVoltageInput( const int pinNumber );
