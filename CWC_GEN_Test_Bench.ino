@@ -9,26 +9,29 @@
 // Constants
 
   // Timing
-  const unsigned int DELAY_TIME = 500; // ms
-  const unsigned int DEBOUNCE_DURATION = 20; // ms
+  #define DELAY_TIME 500 // ms
+  #define DEBOUNCE_DURATION 20 // ms
 
   // Other
-  const unsigned int DECIMAL_PLACES = 1;
-  const unsigned int RESOLUTION = 1023;
-  const unsigned int NUM_OF_SENSORS = 4;
+  #define DECIMAL_PLACES  1
+  #define RESOLUTION 1023
+  #define NUM_OF_SENSORS 4
+  #define MAX_STRING_LENGTH 128
+  #define STANDARD_STRING_LENGTH 64
+  #define BAUD_RATE 9600
 
   // Arduino Specs
-  const float REFERENCE_VOLTAGE = 4.54;
+  #define REFERENCE_VOLTAGE 4.54
   const float VOLTAGE_PER_COUNT = REFERENCE_VOLTAGE / RESOLUTION;
   const float MIDPOINT_VOLTAGE = REFERENCE_VOLTAGE / 2;
 
   // Characters/Units
-  const char SPACE = ' ';
-  const String TIME_UNIT = "s";
-  const String VOLTAGE_UNIT = "V";
-  const String CURRENT_UNIT = "A";
-  const String ROTATIONAL_SPEED_UNIT = "RPM";
-  const String TORQUE_UNIT = "N-mm";
+  #define SPACE ' '
+  #define TIME_UNIT "s"
+  #define VOLTAGE_UNIT "V"
+  #define CURRENT_UNIT "A"
+  #define ROTATIONAL_SPEED_UNIT "RPM"
+  #define TORQUE_UNIT "N-mm"
 
   // Voltage Divider
   const int VOLTAGE_DIVIDER_ANALOG_PIN = A0;
@@ -45,7 +48,6 @@
 
   // SD Card Reader
   const int SD_CARD_READER_CS_PIN = 10;
-  const String DATA_HEADER = "Time(" + TIME_UNIT + ") Voltage(" + VOLTAGE_UNIT + ") Current(" + CURRENT_UNIT + ") RotationalSpeed(" + ROTATIONAL_SPEED_UNIT + ") Torque(" + TORQUE_UNIT + ")";
 
   // Load Cell Amp
   const float CALIBRATION_FACTOR = 372.5;
@@ -55,7 +57,8 @@
   const int COLUMNS = 20;
   const int ROWS = 4;
 
-float getVoltageInput( int pinNumber );
+
+float getVoltageInput( const int pinNumber );
 
 class LED {
 
@@ -100,13 +103,13 @@ class LCD_Screen {
       screen.clear();
     }
 
-    void print( char *string, int line ) {
+    void print( const char *string, const int line ) {
       screen.setCursor( 0, line );
       screen.print( string );
     }
 
     template < typename Sensor >
-    void printUnit( Sensor *sensor, int line ) {
+    void printUnit( Sensor *sensor, const int line ) {
       String unit = sensor->getUnit();
       int unitStringLength = unit.length();
       int unitCursorPosition = cols - unitStringLength;
@@ -114,19 +117,19 @@ class LCD_Screen {
       screen.print( unit );
     }
 
-    void printValue( float value, int line ) {
+    void printValue( const float value, const int line ) {
       screen.setCursor( 0, line );
       screen.print( value, DECIMAL_PLACES );
     }
 
-    void clearChars( int line, int endingColumn = COLUMNS ) {  
+    void clearChars( const int line, const int endingColumn = COLUMNS ) {  
       screen.setCursor( 0, line );
       for( int currCol = 0; currCol < endingColumn; currCol++ ) {
         clearChar();
       }
     }
 
-    void clearValue( int line, int unitLength ) {
+    void clearValue( const int line, const int unitLength ) {
       int endingColumn = cols - unitLength;
       clearChars( line, endingColumn );
     }
@@ -135,8 +138,14 @@ class LCD_Screen {
       screen.print( SPACE );
     }
 
+    void clearScreen() {
+      for ( int line = 0; line < rows; line++ ) {
+        clearChars( line );
+      }
+    }
+
     template < typename Sensor >
-    void printMeasurement( Sensor *sensor, int line ) {
+    void printMeasurement( Sensor *sensor, const int line ) {
       float sensorMeasurement = sensor->measure();
       String unit = sensor->getUnit();
       int unitLength = unit.length();
@@ -234,15 +243,16 @@ class LCD_Screen {
 
   // IR Sensor
   volatile long counter = 0;
-  volatile unsigned long lastInterruptTime = millis();
+  volatile unsigned long lastInterruptTime = 0;
 
   void InfraredInterrupt() {
     if ( millis() - lastInterruptTime > DEBOUNCE_DURATION ) {
-      if ( digitalRead( INFRARED_SENSOR_OUT_PIN ) == LOW ) {
+      
+      // if ( digitalRead( INFRARED_SENSOR_OUT_PIN ) == LOW ) {
         counter++;
         Serial.println( counter );
         lastInterruptTime = millis();
-      }
+      // }
     }
   }
 
@@ -265,12 +275,15 @@ class LCD_Screen {
         long rotations;
         double minutesPassed;
         if ( currentTime >= DELAY_TIME ) {
-          detachInterrupt( digitalPinToInterrupt( dPin ) ); // Stop tracking for pulses
+          // detachInterrupt( digitalPinToInterrupt( dPin ) ); // Stop tracking for pulses
+          noInterrupts();
           rotations = counter / ( long ) ppr;
           minutesPassed = currentTime / 60000.0; // Converts ms to s, then to minutes
           RPM = rotations / minutesPassed;  // Calculate RPM
+          Serial.println( "Reset" );
           counter = 0;
-          attachInterrupt( digitalPinToInterrupt( dPin ), InfraredInterrupt, FALLING ); // Start tracking for pulses
+          // attachInterrupt( digitalPinToInterrupt( dPin ), InfraredInterrupt, FALLING ); // Start tracking for pulses
+          interrupts();
           previousTime = millis();
         }
         return RPM;
@@ -364,7 +377,6 @@ class LCD_Screen {
     int previousState;
     long previousPressTime;
     int dPin;
-    
 };
 
 
@@ -374,39 +386,38 @@ class Micro_SD_Card_Reader {
     Micro_SD_Card_Reader( int chipSelectPin ) {
       csPin = chipSelectPin;
       cardIsAvailable = false;
-      cardWasAvailable = false;
     }
 
     bool initialize() {
       if ( SD.begin( csPin ) ) {
-        
         setCardIsAvailable( true );
-        if ( !wasCardAvailable() ) {
-          fileName = createFileName();
-          writeHeader();
-        }
+        createFileName();
+        writeHeader();
       }
       else {
         setCardIsAvailable( false );
       }
-      Serial.println(cardIsAvailable);
       return cardIsAvailable;
     }
 
-    char *createFileName() {
+    void createFileName() {
       int counter = 0;
-      static char currentFileName[ 32 ];
       do {
-        sprintf( currentFileName, "data%d.txt", counter );
+        sprintf( fileName, "DATA%d.TXT", counter );
         counter++;
-      } while ( SD.exists( currentFileName ) );
-      return currentFileName;
+      } while ( SD.exists( fileName ) );
     }
 
     void writeHeader() {
       File dataFile = getFile();
-      if ( dataFile ) {
-        dataFile.println( DATA_HEADER );
+      String dataHeader;
+      if ( cardIsAvailable && dataFile ) {
+        dataHeader = "Time(" + String( TIME_UNIT ) +
+                        ") Voltage(" + String( VOLTAGE_UNIT ) +
+                        ") Current(" + String( CURRENT_UNIT ) +
+                        ") RotationalSpeed(" + String( ROTATIONAL_SPEED_UNIT ) +
+                        ") Torque(" + String( TORQUE_UNIT ) + ")";
+        dataFile.println( dataHeader );
         dataFile.close();
       }
       else {
@@ -418,7 +429,7 @@ class Micro_SD_Card_Reader {
       float seconds = getSeconds();
       String dataToWrite;
       File dataFile = getFile();
-      if ( dataFile ) {
+      if ( cardIsAvailable && dataFile ) {
         dataToWrite = floatToString( seconds ) + String( SPACE ); 
         dataFile.print( dataToWrite );
         dataFile.close();
@@ -433,7 +444,7 @@ class Micro_SD_Card_Reader {
       float measurement;
       String dataToWrite;
       File dataFile = getFile();
-      if ( dataFile ) {
+      if ( cardIsAvailable && dataFile ) {
         measurement = sensor->getMeasurement();
         dataToWrite = floatToString( measurement ) + String( SPACE );
         dataFile.print( dataToWrite );
@@ -446,21 +457,13 @@ class Micro_SD_Card_Reader {
 
     void writeNewLine() {
       File dataFile = getFile();
-      if ( dataFile ) {
+      if ( cardIsAvailable && dataFile ) {
         dataFile.println();
         dataFile.close();
       }
       else {
         setCardIsAvailable( false );
       }
-    }
-
-    bool wasCardAvailable() {
-      return cardWasAvailable;
-    }
-
-    bool isCardAvailable() {
-      return cardIsAvailable;
     }
 
     File getFile() {
@@ -475,20 +478,15 @@ class Micro_SD_Card_Reader {
       cardIsAvailable = available;
     }
 
-    void setCardWasAvailable( bool available ) {
-      cardWasAvailable = available;
-    }
-
   private:
     int csPin;
-    char *fileName;
+    char fileName[ STANDARD_STRING_LENGTH ];
     bool cardIsAvailable;
-    bool cardWasAvailable;
 };
 
-LED greenLed( 9 );
-LED redLed( 8 );
-LCD_Screen lcdScreen( I2C_ADDRESS, COLUMNS, ROWS );
+// LED greenLed( 9 );
+// LED redLed( 8 );
+LCD_Screen screen( I2C_ADDRESS, COLUMNS, ROWS );
 VoltageDivider *voltageDivider = new VoltageDivider( VOLTAGE_DIVIDER_ANALOG_PIN, 9.92, 0.995 );
 CurrentSensor *currentSensor = new CurrentSensor( CURRENT_SENSOR_ANALOG_PIN, 0.066 );
 InfraredSensor *infraredSensor = new InfraredSensor( INFRARED_SENSOR_OUT_PIN, 1 ); 
@@ -496,16 +494,16 @@ LoadCellAmp *loadCellAmp = new LoadCellAmp( LOAD_CELL_AMP_DAT_PIN, LOAD_CELL_AMP
 Micro_SD_Card_Reader cardReader( SD_CARD_READER_CS_PIN );
 Sensor *sensors[ NUM_OF_SENSORS ] = { voltageDivider, currentSensor, infraredSensor, loadCellAmp };
 
-float getVoltageInput( int pinNumber ) {
+float getVoltageInput( const int pinNumber ) {
   int count = analogRead( pinNumber );
   return digitalToAnalogConverter( count );
 }
 
-float digitalToAnalogConverter( int count ) {
+float digitalToAnalogConverter( const int count ) {
   return count * VOLTAGE_PER_COUNT;
 }
 
-char *floatToString( float value ) {
+char *floatToString( const float value ) {
   static char valueString[ 20 ];
   dtostrf( value, 1, DECIMAL_PLACES, valueString );
   return valueString;
@@ -513,64 +511,86 @@ char *floatToString( float value ) {
 
 void printUnits() {
   for ( unsigned int sensorIndex = 0; sensorIndex < NUM_OF_SENSORS; sensorIndex++ ) {
-    lcdScreen.printUnit( sensors[ sensorIndex ], sensorIndex );
+    screen.printUnit( sensors[ sensorIndex ], sensorIndex );
   }
 }
 
 void printMeasurements() {
   for ( unsigned int sensorIndex = 0; sensorIndex < NUM_OF_SENSORS; sensorIndex++ ) {
-    lcdScreen.printMeasurement( sensors[ sensorIndex ], sensorIndex );
+    screen.printMeasurement( sensors[ sensorIndex ], sensorIndex );
   }
 }
 
-void initializeCardReaderSetup() {
+void printCardDetectedScreen() {
+  String infoToPrint = "File: " + cardReader.getFileName();
+  screen.print( "Card Detected", 0 );
+  screen.print( infoToPrint.c_str(), 1 );
+}
+
+void printCardNotDetectedScreen() {
+  screen.print( "Card Not Detected", 0 );
+}
+
+void initializeCardReader() {
   if ( cardReader.initialize() ) {
-    Serial.println("Yay");
-    redLed.turnOff();
-    greenLed.turnOn();
-    if ( !cardReader.wasCardAvailable() ) {
-      
-      lcdScreen.print( "SD Card Detected", 2 );
-      String fileName = cardReader.getFileName();
-      String dataToPrint = "Writing data to " + fileName;
-      lcdScreen.print( dataToPrint.c_str(), 3 );
-      // delay(5000);
-      cardReader.setCardWasAvailable( true );
-    }
+    printCardDetectedScreen();
+  }
+  else {
+    printCardNotDetectedScreen();
+  }
+  delay( 5000 );
+  screen.clearScreen();
+}
+
+void writeSensorData() {
+  for ( unsigned int sensorIndex = 0; sensorIndex < NUM_OF_SENSORS; sensorIndex++ ) {
+    cardReader.writeData( sensors[ sensorIndex ] );
   }
 }
 
 void writeMeasurements() {
-  if ( cardReader.isCardAvailable() ) {
-    cardReader.writeTime();
-    for ( unsigned int sensorIndex = 0; sensorIndex < NUM_OF_SENSORS; sensorIndex++ ) {
-      cardReader.writeData( sensors[ sensorIndex ] );
-    }
-    cardReader.writeNewLine();
-  }
-  else {
-    greenLed.turnOff();
-    redLed.turnOn();
-    initializeCardReaderSetup();
-  }
+  cardReader.writeTime();
+  writeSensorData();
+  cardReader.writeNewLine();
 }
 
-void initializeLeds() {
-  greenLed.initialize();
-  redLed.initialize();
-  redLed.turnOn();
-}
 
 void initializeSensors() {
   for ( unsigned int sensorIndex = 0; sensorIndex < NUM_OF_SENSORS; sensorIndex++ ) {
     sensors[ sensorIndex ]->initialize();
   }
 }
+ 
+void printTimer() {
+  for ( int i = 5; i >= 0; i-- ) {
+    String secondsStr = String( i ) + " s";
+    screen.print( secondsStr.c_str(), 3 );
+    delay( 1000 );
+  }
+}
 
-void initializeDataLoggers() {
-  lcdScreen.initialize();
-  lcdScreen.print( "Initializing...", 0 );
-  initializeCardReaderSetup();
+void printIntroScreen() {
+  screen.print( "CWC GEN FA '25", 0 );
+  screen.print( "Insert Mirco SD Card", 1 );
+  screen.print( "Time Left:", 2 );
+  printTimer();
+}
+
+void printInitializingScreen() {
+  screen.print( "Initializing...", 0 );
+}
+
+void initializeScreen() {
+  screen.initialize();
+  printIntroScreen();
+  screen.clearScreen();
+  printInitializingScreen();
+}
+
+
+void initializeDataLogging() {
+  initializeScreen();
+  initializeCardReader();
   printUnits();
 }
 
@@ -579,9 +599,8 @@ float getSeconds() {
 }
 
 void setup() {
-  Serial.begin( 9600 );
-  initializeLeds();
-  initializeDataLoggers();
+  Serial.begin( BAUD_RATE );
+  initializeDataLogging();
   initializeSensors();
 }
 
