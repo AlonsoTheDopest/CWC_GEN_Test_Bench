@@ -9,24 +9,27 @@
 // Constants
 
   // Timing
-  #define DELAY_TIME 500 // ms
-  #define DEBOUNCE_DURATION 20 // ms
+  #define ONE_SECOND 1000 // ms
+  #define DELAY_TIME 150 // ms
+  #define MEASUREMENT_REFRESH_TIME 150 // ms
+  #define DEBOUNCE_DURATION 20 // ms 
 
   // Other
-  #define DECIMAL_PLACES  1
+  #define DECIMAL_PLACES 1 // Max is 6 for this Arduino // MAY CHANGE //
   #define RESOLUTION 1023
   #define NUM_OF_SENSORS 4
   #define MAX_STRING_LENGTH 128
   #define STANDARD_STRING_LENGTH 64
-  #define BAUD_RATE 9600
+  #define BAUD_RATE 9600 // For serial monitor output // MAY CHANGE //
 
   // Arduino Specs
-  #define REFERENCE_VOLTAGE 4.54
+  #define REFERENCE_VOLTAGE 4.54 // MAY CHANGE //
   const float VOLTAGE_PER_COUNT = REFERENCE_VOLTAGE / RESOLUTION;
   const float MIDPOINT_VOLTAGE = REFERENCE_VOLTAGE / 2;
 
   // Characters/Units
   #define SPACE ' '
+  #define TAB '\t'
   #define TIME_UNIT "s"
   #define VOLTAGE_UNIT "V"
   #define CURRENT_UNIT "A"
@@ -50,7 +53,7 @@
   #define SD_CARD_READER_CS_PIN 10
 
   // Load Cell Amp
-  #define CALIBRATION_FACTOR 372.5
+  #define CALIBRATION_FACTOR 372.5 // MAY CHANGE //
 
   // LCD Screen
   #define I2C_ADDRESS 0x27
@@ -60,34 +63,13 @@
 
 float getVoltageInput( const int pinNumber );
 
-class LED {
+class Sensor {
 
   public:
-    LED( int digitalPin ) {
-      dPin = digitalPin;
-    }
-
-    void initialize() {
-      pinMode( dPin, OUTPUT );
-    }
-
-    void turnOn() {
-      digitalWrite( dPin, HIGH );
-    }
-
-    void turnOff() {
-      digitalWrite( dPin, LOW );
-    }
-
-    void blink() {
-      turnOn();
-      delay( DELAY_TIME );
-      turnOff();
-      delay( DELAY_TIME );
-    }
-
-  private:
-    int dPin;
+    virtual void initialize() = 0;
+    virtual float measure() = 0;
+    virtual String getUnit() = 0;
+    virtual float getMeasurement() = 0;
 };
 
 class LCD_Screen {
@@ -108,7 +90,6 @@ class LCD_Screen {
       screen.print( string );
     }
 
-    template < typename Sensor >
     void printUnit( Sensor *sensor, const int line ) {
       String unit = sensor->getUnit();
       int unitStringLength = unit.length();
@@ -144,7 +125,6 @@ class LCD_Screen {
       }
     }
 
-    template < typename Sensor >
     void printMeasurement( Sensor *sensor, const int line ) {
       float sensorMeasurement = sensor->measure();
       String unit = sensor->getUnit();
@@ -158,14 +138,6 @@ class LCD_Screen {
     int cols;
     int rows;
 };
-
-  class Sensor {
-    public:
-      virtual void initialize() {}
-      virtual float measure() {}
-      virtual String getUnit() {}
-      virtual float getMeasurement() {}
-  };
 
   // Voltage Divider
   class VoltageDivider : public Sensor {
@@ -250,7 +222,7 @@ class LCD_Screen {
       
       // if ( digitalRead( INFRARED_SENSOR_OUT_PIN ) == LOW ) {
         counter++;
-        Serial.println( counter );
+        // Serial.println( counter );
         lastInterruptTime = millis();
       // }
     }
@@ -258,9 +230,9 @@ class LCD_Screen {
 
   class InfraredSensor : public Sensor {
     public:
-      InfraredSensor( int digitalPin, int pulsePerRotation ) {
+      InfraredSensor( int digitalPin ) {
         dPin = digitalPin;
-        ppr = pulsePerRotation;
+        // ppr = pulsePerRotation;
         RPM = 0.0;
         previousTime = millis();
       }
@@ -277,10 +249,10 @@ class LCD_Screen {
         if ( currentTime >= DELAY_TIME ) {
           // detachInterrupt( digitalPinToInterrupt( dPin ) ); // Stop tracking for pulses
           noInterrupts();
-          rotations = counter / ( long ) ppr;
+          rotations = counter;
           minutesPassed = currentTime / 60000.0; // Converts ms to s, then to minutes
           RPM = rotations / minutesPassed;  // Calculate RPM
-          Serial.println( "Reset" );
+          // Serial.println( "Reset" );
           counter = 0;
           // attachInterrupt( digitalPinToInterrupt( dPin ), InfraredInterrupt, FALLING ); // Start tracking for pulses
           interrupts();
@@ -299,7 +271,7 @@ class LCD_Screen {
 
     private:
       float RPM;
-      int ppr;
+      // int ppr;
       unsigned long previousTime;
       int dPin;
   };
@@ -318,23 +290,27 @@ class LCD_Screen {
 
       void initialize() {
         scale.begin( dPin, clkPin );
-        scale.set_scale();
-        scale.tare();
+        if ( scale.is_ready() ) {
+          scale.set_scale();
+          scale.tare();
+        }
       }
 
       float measure() {
-        if ( Serial.available() > 0 ) {
-          String input = Serial.readString();
-          input.trim();
-          if ( input == "+" ) {
-            calFac += 10;
+        if ( scale.is_ready() ) { 
+          if ( Serial.available() > 0 ) {
+            String input = Serial.readString();
+            input.trim();
+            if ( input == "+" ) {
+              calFac += 10;
+            }
+            else if ( input == "-" ) {
+              calFac -= 10;
+            }
           }
-          else if ( input == "-" ) {
-            calFac -= 10;
-          }
+          scale.set_scale( calFac );
+          return scale.get_units(3);
         }
-        scale.set_scale( calFac );
-        return scale.get_units(3);
       }
 
       String getUnit() {
@@ -352,32 +328,6 @@ class LCD_Screen {
       float torque;
       float calFac;
   };
-  
-  // Button
-  class Button {
-    public:
-      Button( int digitalPin ) : previousState( 0 ), previousPressTime( millis() ), dPin( digitalPin ) {
-        pinMode( dPin, INPUT );
-      }
-
-      bool wasPressed() {
-        int currentState;
-        if ( millis() - previousPressTime > DEBOUNCE_DURATION ) {
-          currentState = digitalRead( dPin );
-          if ( currentState != previousState ) {
-            previousPressTime = millis();
-            previousState = currentState;
-            return currentState == HIGH;
-          }
-        }
-        return false;
-      }
-
-  private:
-    int previousState;
-    long previousPressTime;
-    int dPin;
-};
 
 
 // SD Card Reader
@@ -439,7 +389,7 @@ class Micro_SD_Card_Reader {
       }
     }
 
-    template < typename Sensor >
+    // template < typename Sensor >
     void writeData( Sensor *sensor ) {
       float measurement;
       String dataToWrite;
@@ -484,15 +434,13 @@ class Micro_SD_Card_Reader {
     bool cardIsAvailable;
 };
 
-// LED greenLed( 9 );
-// LED redLed( 8 );
 LCD_Screen screen( I2C_ADDRESS, COLUMNS, ROWS );
-VoltageDivider *voltageDivider = new VoltageDivider( VOLTAGE_DIVIDER_ANALOG_PIN, 9.92, 0.995 );
-CurrentSensor *currentSensor = new CurrentSensor( CURRENT_SENSOR_ANALOG_PIN, 0.066 );
-InfraredSensor *infraredSensor = new InfraredSensor( INFRARED_SENSOR_OUT_PIN, 1 ); 
-LoadCellAmp *loadCellAmp = new LoadCellAmp( LOAD_CELL_AMP_DAT_PIN, LOAD_CELL_AMP_CLK_PIN, CALIBRATION_FACTOR );
+VoltageDivider voltageDivider( VOLTAGE_DIVIDER_ANALOG_PIN, 9.92, 0.995 );
+CurrentSensor currentSensor( CURRENT_SENSOR_ANALOG_PIN, 0.066 );
+InfraredSensor infraredSensor( INFRARED_SENSOR_OUT_PIN ); 
+LoadCellAmp loadCellAmp( LOAD_CELL_AMP_DAT_PIN, LOAD_CELL_AMP_CLK_PIN, CALIBRATION_FACTOR );
 Micro_SD_Card_Reader cardReader( SD_CARD_READER_CS_PIN );
-Sensor *sensors[ NUM_OF_SENSORS ] = { voltageDivider, currentSensor, infraredSensor, loadCellAmp };
+Sensor *sensors[ NUM_OF_SENSORS ] = { &voltageDivider, &currentSensor, &infraredSensor, &loadCellAmp };
 
 float getVoltageInput( const int pinNumber ) {
   int count = analogRead( pinNumber );
@@ -504,7 +452,7 @@ float digitalToAnalogConverter( const int count ) {
 }
 
 char *floatToString( const float value ) {
-  static char valueString[ 20 ];
+  static char valueString[ COLUMNS ];
   dtostrf( value, 1, DECIMAL_PLACES, valueString );
   return valueString;
 }
@@ -532,13 +480,15 @@ void printCardNotDetectedScreen() {
 }
 
 void initializeCardReader() {
-  if ( cardReader.initialize() ) {
+  bool cardReaderIsInitialized = cardReader.initialize();
+  screen.clearScreen();
+  if ( cardReaderIsInitialized  ) {
     printCardDetectedScreen();
   }
   else {
     printCardNotDetectedScreen();
   }
-  delay( 5000 );
+  delay( ONE_SECOND );
   screen.clearScreen();
 }
 
@@ -565,19 +515,21 @@ void printTimer() {
   for ( int i = 5; i >= 0; i-- ) {
     String secondsStr = String( i ) + " s";
     screen.print( secondsStr.c_str(), 3 );
-    delay( 1000 );
+    delay( ONE_SECOND );
   }
 }
 
 void printIntroScreen() {
-  screen.print( "CWC GEN FA '25", 0 );
+  screen.print( "CWC GEN Fall \'25", 0 );
   screen.print( "Insert Mirco SD Card", 1 );
   screen.print( "Time Left:", 2 );
   printTimer();
 }
 
 void printInitializingScreen() {
-  screen.print( "Initializing...", 0 );
+  screen.print( "CWC GEN Fall \'25", 0 );
+  screen.print( "Initializing card", 2 );
+  screen.print( "reader and sensors", 3 );
 }
 
 void initializeScreen() {
@@ -607,5 +559,5 @@ void setup() {
 void loop() {
   printMeasurements();
   writeMeasurements();
-  delay( DELAY_TIME );
+  delay( MEASUREMENT_REFRESH_TIME );
 }
